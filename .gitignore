@@ -1,160 +1,482 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+#Importing Library Packages
 
-# C extensions
-*.so
+from google.colab import drive
+drive.mount('/content/drive')
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from wordcloud import WordCloud
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+# Loading Dataset
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+file_path = '/content/drive/MyDrive/train_news.csv'
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
+encodings_to_try = ['latin-1']
 
-# Translations
-*.mo
-*.pot
+for encoding in encodings_to_try:
+    try:
+        news_data = pd.read_csv(file_path, encoding=encoding, low_memory=False)
+        news_data = news_data.loc[:, ~news_data.columns.str.contains('^Unnamed')]
+        break
+    except UnicodeDecodeError:
+        print(f"Failed to decode using {encoding} encoding. Trying another encoding...")
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
 
-# Flask stuff:
-instance/
-.webassets-cache
+**Data Exploration And Quality checks**
 
-# Scrapy stuff:
-.scrapy
+news_data.head()
 
-# Sphinx documentation
-docs/_build/
+news_data.shape
 
-# PyBuilder
-.pybuilder/
-target/
+news_data.columns
 
-# Jupyter Notebook
-.ipynb_checkpoints
+**Data Quality Check**
 
-# IPython
-profile_default/
-ipython_config.py
+news_data.info()
 
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+# **Check the duplicate rows**
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
+duplicates = news_data[news_data.duplicated()]
+print("Duplicate Rows : ",len(duplicates))
 
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
+#Clean the duplicate value
 
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
-#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
-#   in version control.
-#   https://pdm.fming.dev/#use-with-ide
-.pdm.toml
+news_data = news_data.drop_duplicates(subset=['id', 'headline', 'written_by', 'news', 'label'])
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
+news_data = news_data.dropna(how='all')
 
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
 
-# SageMath parsed files
-*.sage.py
+# Summary statistics
 
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+news_data.describe()
 
-# Spyder project settings
-.spyderproject
-.spyproject
+# Checking for missing values
 
-# Rope project settings
-.ropeproject
+missing_values = news_data.isnull().sum()
+print(missing_values)
 
-# mkdocs documentation
-/site
+# Data Cleaning
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
 
-# Pyre type checker
-.pyre/
+# Remove missing values from the Dataset
 
-# pytype static type analyzer
-.pytype/
+news_data.fillna(0, inplace=True)
 
-# Cython debug symbols
-cython_debug/
+news_data.isnull().sum()
 
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+unique_labels = news_data['label'].unique()
+print(unique_labels)
+
+news_data = news_data.drop('id', axis=1)
+
+
+
+# Keep only values 0 and 1 in the 'label' column
+news_data1 = news_data[news_data['label'].isin(['0', '1'])]
+
+
+label_counts = news_data1['label'].value_counts()
+
+print("Class distribution before balancing:")
+print(label_counts)
+
+class_min_count = label_counts.min()
+balanced_data = pd.concat([
+    news_data1[news_data1['label'] == label].sample(class_min_count, replace=True)
+    for label in label_counts.index
+])
+
+print("\nClass distribution after balancing:")
+print(balanced_data['label'].value_counts())
+
+
+# **Explotory Data Analysis**
+
+#Distribution of Labels in Fake and Original News
+
+balanced_data['label'] = pd.to_numeric(balanced_data['label'], errors='coerce')
+balanced_data['label'] = balanced_data['label'].replace({0: 'Fake News', 1: 'Original News'})
+
+plt.figure(figsize=(8, 5))
+sns.countplot(x='label', data=balanced_data)
+plt.title('Distribution of Labels in Fake and Original News')
+plt.xlabel('Label')
+plt.ylabel('Count')
+plt.show()
+
+
+# Number of articles written by each author
+
+encodings_to_try = ['latin-1']
+
+for encoding in encodings_to_try:
+    try:
+        news_data = pd.read_csv(file_path, encoding=encoding, low_memory=False)
+        news_data = news_data.loc[:, ~news_data.columns.str.contains('^Unnamed')]
+        break
+    except UnicodeDecodeError:
+        print(f"Failed to decode using {encoding} encoding. Trying another encoding...")
+
+plt.figure(figsize=(12, 8))
+author_counts = news_data['written_by'].value_counts().head(10)
+author_counts.plot(kind='bar', color='skyblue')
+plt.title('Authors by Number of Articles')
+plt.xlabel('Author')
+plt.ylabel('Number of Articles')
+plt.show()
+
+# Word Cloud of Original News Headlines
+
+news_data['label'] = pd.to_numeric(news_data['label'], errors='coerce')
+
+Original_threshold = 0
+
+news_data['Sentiment'] = news_data['label'].apply(lambda x: 'Positive' if x >= Original_threshold else 'Negative')
+
+news_data['headline'] = news_data['headline'].astype(str).replace('nan', '')
+
+Original_news = news_data[news_data['Sentiment'] == 'Positive']
+
+all_Original_news = ' '.join(Original_news['headline'])
+
+wordcloud_Original = WordCloud(width=800, height=800,
+                                background_color='white',
+                                stopwords=set(['stopword1', 'stopword2']),
+                                min_font_size=10).generate(all_Original_news)
+
+plt.figure(figsize=(10, 10))
+plt.imshow(wordcloud_Original, interpolation='bilinear')
+plt.axis("off")
+plt.title('Word Cloud of Original News Headlines')
+plt.show()
+
+
+# Word Cloud of Fake News Headlines
+
+text_data = ' '.join(news_data['headline'].astype(str) + ' ' + news_data['written_by'].astype(str) + ' ' + news_data['news'].astype(str))
+
+wordcloud = WordCloud(width=800, height=400, background_color='white').generate(text_data)
+
+plt.figure(figsize=(10, 5))
+plt.imshow(wordcloud, interpolation='bilinear')
+plt.axis('off')
+plt.title('Word Cloud of Fake News Headlines')
+plt.show()
+
+
+#Data Class Balancing
+
+news_data = news_data.drop('id', axis=1)
+
+# Keep only values 0 and 1 in the 'label' column
+news_data = news_data[news_data['label'].isin([0.0, 1.0])]
+
+
+label_counts = news_data['label'].value_counts()
+
+print("Class distribution before balancing:")
+print(label_counts)
+
+class_min_count = label_counts.min()
+balanced_data = pd.concat([
+    news_data[news_data['label'] == label].sample(class_min_count, replace=True)
+    for label in label_counts.index
+])
+
+print("\nClass distribution after balancing:")
+print(balanced_data['label'].value_counts())
+
+
+#Class Distribution Before Balancing
+
+news_data = news_data1
+
+fig, ax1 = plt.subplots(figsize=(8, 5))
+
+ax1.bar(label_counts.index.astype(str), label_counts.values, color=['blue', 'red'])
+ax1.set_title('Class Distribution Before Balancing')
+ax1.set_xlabel('News Type')
+ax1.set_ylabel('Count')
+
+plt.tight_layout()
+plt.show()
+
+#Class Distribution After Balancing
+
+fig, ax = plt.subplots(figsize=(8, 5))
+
+balanced_label_counts = balanced_data['label'].value_counts()
+ax.bar(balanced_label_counts.index.astype(str), balanced_label_counts.values, color=['blue', 'red'])
+ax.set_title('Class Distribution After Balancing')
+ax.set_xlabel('News Type')
+ax.set_ylabel('Count')
+
+plt.show()
+
+# Machine Learning Model
+
+# Model Of Random Forest Classifier
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
+import joblib
+
+news_data['headline'] = news_data['headline'].astype(str)
+news_data['headline'].fillna('', inplace=True)
+news_data = news_data.dropna(subset=['label'])
+
+news_data['label'] = news_data['label'].astype(str)
+
+features = [ 'headline', 'written_by', 'news']
+X = news_data[features]
+y = news_data['label']
+
+X['combined_features'] = X['headline'] + ' ' + X['written_by'].astype(str) + ' ' + X['news'].astype(str)
+
+vectorizer = CountVectorizer(stop_words='english')
+X_vectorized = vectorizer.fit_transform(X['combined_features'])
+
+X_train, X_test, y_train, y_test = train_test_split(X_vectorized, y, test_size=0.2, random_state=42)
+
+rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+rf_model.fit(X_train, y_train)
+
+joblib.dump(rf_model, 'random_forest_model.sav')
+
+y_pred = rf_model.predict(X_test)
+
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Accuracy: {accuracy:.2%}")
+
+report = classification_report(y_test, y_pred)
+print("Classification Report Of Random Forest Classifier:\n", report)
+
+
+#Confusion Matrix Of Random Forest Classifier
+
+conf_matrix = confusion_matrix(y_test, y_pred)
+print("Confusion Matrix Of Random Forest Classifier:\n", conf_matrix)
+
+# Model Of Support Vector Machine Classifier
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score, classification_report
+import joblib
+
+
+news_data['headline'] = news_data['headline'].astype(str)
+news_data['headline'].fillna('', inplace=True)
+news_data = news_data.dropna(subset=['label'])
+
+news_data['label'] = news_data['label'].astype(str)
+
+features = ['headline', 'written_by', 'news']
+X = news_data[features]
+y = news_data['label']
+
+X['combined_features'] = X['headline'] + ' ' + X['written_by'].astype(str) + ' ' + X['news'].astype(str)
+
+vectorizer = CountVectorizer(stop_words='english')
+X_vectorized = vectorizer.fit_transform(X['combined_features'])
+
+X_train, X_test, y_train, y_test = train_test_split(X_vectorized, y, test_size=0.2, random_state=42)
+
+svm_model = SVC()
+svm_model.fit(X_train, y_train)
+
+joblib.dump(svm_model, 'svm_model.sav')
+
+y_pred = svm_model.predict(X_test)
+
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Accuracy: {accuracy:.2%}")
+
+report = classification_report(y_test, y_pred)
+print("Classification Report Of SVM Classifier:\n", report)
+
+
+#Confusion Matrix Of Support Vector Machine Classifier
+
+conf_matrix = confusion_matrix(y_test, y_pred)
+print("Confusion Matrix Of Support Vector Machine Classifier:\n", conf_matrix)
+
+# Model Of Naïve Bayes Classifier
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.metrics import accuracy_score, classification_report
+import joblib
+
+
+news_data['headline'] = news_data['headline'].astype(str)
+news_data['headline'].fillna('', inplace=True)
+news_data = news_data.dropna(subset=['label'])
+
+news_data['label'] = news_data['label'].astype(str)
+
+features = [ 'headline', 'written_by', 'news']
+X = news_data[features]
+y = news_data['label']
+
+X['combined_features'] = X['headline'] + ' ' + X['written_by'].astype(str) + ' ' + X['news'].astype(str)
+
+vectorizer = CountVectorizer(stop_words='english')
+X_vectorized = vectorizer.fit_transform(X['combined_features'])
+
+X_train, X_test, y_train, y_test = train_test_split(X_vectorized, y, test_size=0.2, random_state=42)
+
+nb_model = MultinomialNB()
+nb_model.fit(X_train, y_train)
+
+joblib.dump(nb_model, 'naive_bayes_model.sav')
+
+y_pred = nb_model.predict(X_test)
+
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Accuracy: {accuracy:.2%}")
+
+report = classification_report(y_test, y_pred)
+print("Classification Report Of Naïve Bayes Classifier:\n", report)
+
+
+#Confusion Matrix Of Naïve Bayes Classifier
+
+conf_matrix = confusion_matrix(y_test, y_pred)
+print("Confusion Matrix Of Naïve Bayes Classifier:\n", conf_matrix)
+
+# Model Of Logistic Regression
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report
+import joblib
+
+news_data['headline'] = news_data['headline'].astype(str)
+news_data['headline'].fillna('', inplace=True)
+news_data = news_data.dropna(subset=['label'])
+
+news_data['label'] = news_data['label'].astype(str)
+
+features = ['headline', 'written_by', 'news']
+X = news_data[features]
+y = news_data['label']
+
+X['combined_features'] = X['headline'] + ' ' + X['written_by'].astype(str) + ' ' + X['news'].astype(str)
+
+vectorizer = CountVectorizer(stop_words='english')
+X_vectorized = vectorizer.fit_transform(X['combined_features'])
+
+X_train, X_test, y_train, y_test = train_test_split(X_vectorized, y, test_size=0.2, random_state=42)
+
+logistic_model = LogisticRegression(random_state=42)
+logistic_model.fit(X_train, y_train)
+
+joblib.dump(logistic_model, 'logistic_regression_model.sav')
+
+y_pred = logistic_model.predict(X_test)
+
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Accuracy: {accuracy:.2%}")
+
+report = classification_report(y_test, y_pred)
+print("Classification Report Of Logistic Regression Classifier:\n", report)
+
+
+#Confusion Matrix Of Logistic Regression
+
+conf_matrix = confusion_matrix(y_test, y_pred)
+print("Confusion Matrix Of Logistic Regression:\n", conf_matrix)
+
+# Model Of k-Nearest Neighbors (KNN) Classifier
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score, classification_report
+import joblib
+
+news_data['headline'] = news_data['headline'].astype(str)
+news_data['headline'].fillna('', inplace=True)
+news_data = news_data.dropna(subset=['label'])
+
+news_data['label'] = news_data['label'].astype(str)
+
+features = ['headline', 'written_by', 'news']
+X = news_data[features]
+y = news_data['label']
+
+X['combined_features'] = X['headline'] + ' ' + X['written_by'].astype(str) + ' ' + X['news'].astype(str)
+
+vectorizer = CountVectorizer(stop_words='english')
+X_vectorized = vectorizer.fit_transform(X['combined_features'])
+
+X_train, X_test, y_train, y_test = train_test_split(X_vectorized, y, test_size=0.2, random_state=42)
+
+knn_model = KNeighborsClassifier()
+knn_model.fit(X_train, y_train)
+
+joblib.dump(knn_model, 'knn_model.sav')
+
+y_pred = knn_model.predict(X_test)
+
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Accuracy: {accuracy:.2%}")
+
+report = classification_report(y_test, y_pred)
+print("Classification Report Of KNN Classifier:\n", report)
+
+
+#Confusion Matrix Of k-Nearest Neighbors (KNN) Classifier
+
+conf_matrix = confusion_matrix(y_test, y_pred)
+print("Confusion Matrix Of k-Nearest Neighbors (KNN) Classifier:\n", conf_matrix)
+
+#Comparison of Model Accuracies
+
+classifiers = {
+    'Random Forest': RandomForestClassifier(n_estimators=100, random_state=42),
+    'Support Vector Machine': SVC(),
+    'Naive Bayes': MultinomialNB(),
+    'Logistic Regression': LogisticRegression(random_state=42),
+    'k-Nearest Neighbors': KNeighborsClassifier()
+}
+
+accuracy_scores = {}
+
+for classifier_name, model in classifiers.items():
+    X_train, X_test, y_train, y_test = train_test_split(X_vectorized, y, test_size=0.2, random_state=42)
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+
+    accuracy = accuracy_score(y_test, y_pred)
+    accuracy_scores[classifier_name] = accuracy
+
+    report = classification_report(y_test, y_pred)
+
+plt.figure(figsize=(10, 6))
+colors = plt.cm.rainbow(np.linspace(0, 1, len(classifiers)))
+
+bars = plt.bar(accuracy_scores.keys(), accuracy_scores.values(), color=colors)
+plt.ylabel('Accuracy')
+plt.title('Comparison of Model Accuracies')
+plt.ylim(0, 1.1)
+
+for bar, acc, color in zip(bars, accuracy_scores.values(), colors):
+    plt.text(bar.get_x() + bar.get_width() / 2 - 0.15, bar.get_height() + 0.02, f'{acc:.2%}', fontsize=9, color=color)
+
+plt.show()
